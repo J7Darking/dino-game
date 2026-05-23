@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dinozavr O'yini</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #f7f7f7; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif; }
+  h1 { font-size: 24px; color: #333; margin-bottom: 10px; }
+  #score-board { font-size: 20px; color: #333; margin-bottom: 10px; }
+  #game-container { position: relative; width: 800px; max-width: 95vw; height: 300px; background: #fff; border: 3px solid #333; border-radius: 10px; overflow: hidden; }
+  #ground { position: absolute; bottom: 0; width: 100%; height: 4px; background: #333; }
+  #dino { position: absolute; bottom: 4px; left: 60px; width: 50px; height: 60px; }
+  .cactus { position: absolute; bottom: 4px; width: 30px; background: #2d7a2d; border-radius: 4px; }
+  .bird { position: absolute; width: 40px; height: 20px; background: #555; border-radius: 50% 50% 0 0; }
+  #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; font-size: 18px; color: #333; }
+  #btn { margin-top: 15px; padding: 12px 30px; font-size: 18px; background: #333; color: #fff; border: none; border-radius: 8px; cursor: pointer; }
+  #btn:hover { background: #555; }
+  #hi-score { font-size: 16px; color: #888; margin-bottom: 5px; }
+  #clouds { position: absolute; top: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cloud { position: absolute; background: #eee; border-radius: 20px; }
+</style>
+</head>
+<body>
+<h1>🦕 Dinozavr O'yini</h1>
+<div id="hi-score">🏆 Rekord: 0</div>
+<div id="score-board">⭐ Ball: 0</div>
+<div id="game-container">
+  <div id="clouds"></div>
+  <canvas id="dino" width="50" height="60"></canvas>
+  <div id="ground"></div>
+  <div id="message">
+    <div>🦕</div>
+    <div>Boshlash uchun bosing yoki</div>
+    <div>SPACE / ↑ tugmasini bosing</div>
+  </div>
+</div>
+<button id="btn">▶ Boshlash</button>
+
+<script>
+const container = document.getElementById('game-container');
+const scoreEl = document.getElementById('score-board');
+const hiScoreEl = document.getElementById('hi-score');
+const messageEl = document.getElementById('message');
+const btn = document.getElementById('btn');
+const canvas = document.getElementById('dino');
+const ctx = canvas.getContext('2d');
+
+let gameRunning = false;
+let score = 0;
+let hiScore = 0;
+let speed = 5;
+let obstacles = [];
+let clouds = [];
+let animFrame;
+let dinoY = 4;
+let dinoVY = 0;
+let jumping = false;
+let isDead = false;
+let frame = 0;
+let leg = 0;
+
+// Dino chizish
+function drawDino(dead) {
+  ctx.clearRect(0, 0, 50, 60);
+  ctx.fillStyle = '#555';
+  // Tana
+  ctx.fillRect(10, 10, 30, 25);
+  // Bosh
+  ctx.fillRect(20, 0, 22, 18);
+  // Ko'z
+  ctx.fillStyle = dead ? '#f00' : '#fff';
+  ctx.fillRect(36, 3, 5, 5);
+  ctx.fillStyle = dead ? '#f00' : '#333';
+  ctx.fillRect(38, 4, 3, 3);
+  // Qo'l
+  ctx.fillStyle = '#555';
+  ctx.fillRect(12, 20, 8, 5);
+  // Dum
+  ctx.fillRect(5, 15, 10, 8);
+  // Oyoqlar
+  ctx.fillStyle = '#555';
+  if (!dead) {
+    if (leg === 0) {
+      ctx.fillRect(15, 35, 8, 20);
+      ctx.fillRect(28, 35, 8, 15);
+    } else {
+      ctx.fillRect(15, 35, 8, 15);
+      ctx.fillRect(28, 35, 8, 20);
+    }
+  } else {
+    ctx.fillRect(15, 35, 8, 18);
+    ctx.fillRect(28, 35, 8, 18);
+  }
+}
+
+// Kaktus yaratish
+function createCactus() {
+  const h = 40 + Math.random() * 40;
+  const el = document.createElement('div');
+  el.className = 'cactus';
+  el.style.height = h + 'px';
+  el.style.right = '-40px';
+  el.style.width = (20 + Math.random() * 15) + 'px';
+  container.appendChild(el);
+  obstacles.push({ el, x: container.offsetWidth + 40, w: parseInt(el.style.width), h, type: 'cactus' });
+}
+
+// Qush yaratish
+function createBird() {
+  const y = 80 + Math.random() * 80;
+  const el = document.createElement('div');
+  el.className = 'bird';
+  el.style.bottom = y + 'px';
+  el.style.right = '-50px';
+  container.appendChild(el);
+  obstacles.push({ el, x: container.offsetWidth + 50, w: 40, h: 20, type: 'bird', y });
+}
+
+// Bulut yaratish
+function createCloud() {
+  const el = document.createElement('div');
+  el.className = 'cloud';
+  el.style.width = (60 + Math.random() * 60) + 'px';
+  el.style.height = '20px';
+  el.style.top = (20 + Math.random() * 80) + 'px';
+  el.style.right = '-100px';
+  container.appendChild(el);
+  clouds.push({ el, x: container.offsetWidth + 100 });
+}
+
+function jump() {
+  if (!jumping && gameRunning) {
+    jumping = true;
+    dinoVY = -15;
+  }
+}
+
+function startGame() {
+  if (gameRunning) return;
+  // Tozalash
+  obstacles.forEach(o => o.el.remove());
+  clouds.forEach(c => c.el.remove());
+  obstacles = [];
+  clouds = [];
+  score = 0;
+  speed = 5;
+  dinoY = 4;
+  dinoVY = 0;
+  jumping = false;
+  isDead = false;
+  frame = 0;
+  messageEl.style.display = 'none';
+  btn.textContent = '↩ Qayta';
+  gameRunning = true;
+  gameLoop();
+}
+
+let obstacleTimer = 0;
+let cloudTimer = 0;
+
+function gameLoop() {
+  if (!gameRunning) return;
+  frame++;
+
+  // Oyoq animatsiyasi
+  if (frame % 10 === 0) leg = leg === 0 ? 1 : 0;
+
+  // Score
+  score++;
+  if (score % 100 === 0) speed += 0.3;
+  scoreEl.textContent = '⭐ Ball: ' + score;
+
+  // Dino sakrash
+  if (jumping) {
+    dinoVY += 0.8;
+    dinoY -= dinoVY;
+    if (dinoY <= 4) {
+      dinoY = 4;
+      jumping = false;
+      dinoVY = 0;
+    }
+  }
+  canvas.style.bottom = dinoY + 'px';
+  drawDino(false);
+
+  // Bulutlar
+  cloudTimer++;
+  if (cloudTimer > 120) {
+    createCloud();
+    cloudTimer = 0;
+  }
+  clouds.forEach((c, i) => {
+    c.x -= 1.5;
+    c.el.style.right = (container.offsetWidth - c.x) + 'px';
+    if (c.x < -150) { c.el.remove(); clouds.splice(i, 1); }
+  });
+
+  // To'siqlar
+  obstacleTimer++;
+  const interval = Math.max(60, 120 - score / 10);
+  if (obstacleTimer > interval) {
+    if (score > 300 && Math.random() < 0.3) createBird();
+    else createCactus();
+    obstacleTimer = 0;
+  }
+
+  // To'siqlarni harakatlantirish va collision
+  const dinoLeft = 60;
+  const dinoRight = 100;
+  const dinoTop = container.offsetHeight - dinoY - 60;
+  const dinoBottom = container.offsetHeight - dinoY;
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.x -= speed;
+    o.el.style.right = (container.offsetWidth - o.x) + 'px';
+
+    // Collision
+    const oLeft = o.x - o.w;
+    const oRight = o.x;
+    const oTop = o.type === 'bird' ? container.offsetHeight - o.y - o.h : container.offsetHeight - o.h;
+    const oBottom = o.type === 'bird' ? container.offsetHeight - o.y : container.offsetHeight;
+
+    if (dinoRight - 5 > oLeft + 5 && dinoLeft + 5 < oRight - 5 &&
+        dinoBottom - 5 > oTop + 5 && dinoTop + 5 < oBottom - 5) {
+      gameover();
+      return;
+    }
+
+    if (o.x < -50) { o.el.remove(); obstacles.splice(i, 1); }
+  }
+
+  animFrame = requestAnimationFrame(gameLoop);
+}
+
+function gameover() {
+  gameRunning = false;
+  isDead = true;
+  drawDino(true);
+  if (score > hiScore) { hiScore = score; hiScoreEl.textContent = '🏆 Rekord: ' + hiScore; }
+  messageEl.innerHTML = `<div style="font-size:30px">💀</div><div>O'yin tugadi!</div><div>Ball: ${score}</div><div style="font-size:14px;margin-top:8px">Qayta boshlash uchun bosing</div>`;
+  messageEl.style.display = 'block';
+  btn.textContent = '▶ Qayta o\'ynash';
+}
+
+// Boshqaruv
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' || e.code === 'ArrowUp') {
+    e.preventDefault();
+    if (!gameRunning) startGame();
+    else jump();
+  }
+});
+container.addEventListener('click', () => { if (!gameRunning) startGame(); else jump(); });
+container.addEventListener('touchstart', e => { e.preventDefault(); if (!gameRunning) startGame(); else jump(); });
+btn.addEventListener('click', startGame);
+
+drawDino(false);
+</script>
+</body>
+</html>
